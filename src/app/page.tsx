@@ -581,7 +581,7 @@ export default function Home() {
                 <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <UserIcon size={20} /> Datos del Cliente
                 </h3>
-                <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                <div className="grid grid-3" style={{ gap: '1rem' }}>
                   <div className="input-group">
                     <label>Nombre / Razón Social</label>
                     <input type="text" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
@@ -740,12 +740,12 @@ export default function Home() {
         {activeTab === "dashboard" && (
           <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             {/* Header with Date Filter */}
-            <div className="glass card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.2rem 2rem' }}>
+            <div className="glass card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
                 <BarChart3 size={24} style={{ color: 'var(--primary-color)' }} />
                 <h2 style={{ margin: 0 }}>Panel de Control</h2>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', width: '100%' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 auto', minWidth: '150px' }}>
                   <label style={{ whiteSpace: 'nowrap', fontSize: '0.9rem' }}>Desde:</label>
                   <input
