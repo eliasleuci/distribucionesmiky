@@ -312,3 +312,73 @@ select:focus {
   scrollbar-width: thin;
   scrollbar-color: rgba(16, 185, 129, 0.2) transparent;
 }
+
+/* Billing layout: stack on mobile, two columns on desktop */
+.billing-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  .billing-grid {
+    grid-template-columns: 1fr 360px;
+  }
+}
+
+/* Tables: always scrollable horizontally */
+.table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-md);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 400px;
+}
+
+th, td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+thead th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.02);
+}
+
+/* Stock tab header: stack vertically on mobile */
+.stock-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.stock-header-actions button,
+.stock-header-actions label {
+  flex-shrink: 0;
+}
+
+/* Action buttons: side by side */
+.action-buttons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* Icon-only buttons */
+.icon-btn {
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

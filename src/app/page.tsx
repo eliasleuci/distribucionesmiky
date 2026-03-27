@@ -457,9 +457,9 @@ export default function Home() {
         {activeTab === "stock" && (
           <div className="glass card animate-in">
             <header style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <h2>Gestión de Inventario</h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div className="stock-header-actions">
                   <label style={{ fontSize: '0.85rem', color: enableStock ? '#10b981' : 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: 'bold' }}>
                     <input type="checkbox" checked={enableStock} onChange={toggleStock} style={{ marginRight: '0.5rem', cursor: 'pointer', accentColor: 'var(--primary-color)' }} />
                     Stock: {enableStock ? 'ON' : 'OFF'}
@@ -581,7 +581,7 @@ export default function Home() {
                 <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <UserIcon size={20} /> Datos del Cliente
                 </h3>
-                <div className="grid grid-3" style={{ gap: '1rem' }}>
+                <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
                   <div className="input-group">
                     <label>Nombre / Razón Social</label>
                     <input type="text" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
