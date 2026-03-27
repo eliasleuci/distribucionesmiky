@@ -199,8 +199,8 @@ select:focus {
 /* Print Styles */
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 0.5cm;
+    size: auto; /* Allow the content to define the height */
+    margin: 0;
   }
 
   body {
@@ -217,17 +217,26 @@ select:focus {
   .print-only {
     display: block !important;
     position: relative;
-    width: 100%;
-    /* Let the receipt grow naturally so it doesn't hide products */
-    height: auto;
-    page-break-after: avoid;
-    /* Don't force a full page break if not needed */
+    box-sizing: border-box;
   }
 
-  .print-only>div {
-    /* No forced height so it only takes what it needs */
-    box-sizing: border-box;
-    margin: 0;
+  /* A4 / Remito specific overrides */
+  @page {
+    /* If printing A4, we might want to specify it, but standard thermal printers use 'auto' */
+  }
+
+  .remito-print {
+    width: 210mm;
+    height: 148.5mm;
+    page-break-after: always;
+  }
+
+  .ticket-print {
+    width: 80mm;
+    margin: 0 auto;
+    padding: 5mm;
+    height: auto;
+    page-break-after: avoid;
   }
 }
 

@@ -44,10 +44,13 @@ export default function Home() {
   const [enableStock, setEnableStock] = useState(true);
   const [showManageCategories, setShowManageCategories] = useState(false);
 
+  // New state for printing mode
+  const [printMode, setPrintMode] = useState<"remito" | "ticket">("remito");
+
   // Deterministic scale calculation to ALWAYS fit within a 148.5mm (half A4) boundary.
   // Base metadata height drastically squashed via CSS to ~220px. Each row is ~20px. Target safe height 480px.
   const printScale = lastSale ? Math.min(1, 480 / (220 + lastSale.items.length * 20)) : 1;
-  const printWidth = `${(100 / printScale).toFixed(2)}%`;
+  const printWidth = printMode === "ticket" ? "80mm" : `${(100 / printScale).toFixed(2)}%`;
 
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -387,8 +390,12 @@ export default function Home() {
   };
 
 
-  const printDocument = () => {
-    window.print();
+  const printDocument = (mode: "remito" | "ticket") => {
+    setPrintMode(mode);
+    // Use a small timeout to let the state update and DOM render before printing
+    setTimeout(() => {
+      window.print();
+    }, 100);
   };
 
   return (
@@ -721,9 +728,14 @@ export default function Home() {
                 <div className="glass card animate-in" style={{ borderColor: 'var(--secondary-color)', background: 'rgba(16, 185, 129, 0.05)' }}>
                   <h3 style={{ marginBottom: '1rem', color: 'var(--secondary-color)' }}>¡Venta Exitosa!</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    <button className="primary-btn" onClick={printDocument} style={{ width: '100%', justifyContent: 'center' }}>
-                      <Download size={18} /> Descargar PDF (Imprimir)
-                    </button>
+                    <div className="grid grid-2" style={{ gap: '0.8rem' }}>
+                      <button className="primary-btn" onClick={() => printDocument("remito")} style={{ width: '100%', justifyContent: 'center', fontSize: '0.85rem' }}>
+                        <Download size={18} /> Remito (A4)
+                      </button>
+                      <button className="primary-btn" onClick={() => printDocument("ticket")} style={{ width: '100%', justifyContent: 'center', background: '#3b82f6', boxShadow: '0 4px 15px rgba(59, 130, 246, 0.2)', fontSize: '0.85rem' }}>
+                        <ShoppingCart size={18} /> Ticket (Térmica)
+                      </button>
+                    </div>
                     <button className="secondary-btn" onClick={shareWhatsApp} style={{ width: '100%', justifyContent: 'center', borderColor: '#25D366', color: '#25D366', background: 'rgba(37, 211, 102, 0.1)' }}>
                       <Share2 size={18} /> Enviar por WhatsApp
                     </button>
@@ -918,63 +930,129 @@ export default function Home() {
         )}
       </section>
 
-      {/* PRINTABLE AREA (FORCED HALF A4 PAGE FORMAT) */}
-      <div className="print-only" style={{ height: '148.5mm', width: '210mm', overflow: 'hidden' }}>
-        {lastSale && (
-          <div style={{ padding: '1rem', color: 'black', background: 'white', width: printWidth, transform: `scale(${printScale})`, transformOrigin: 'top left' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid black', paddingBottom: '0.4rem', marginBottom: '0.5rem', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <img src="/logo.jpg" alt="Logo Distribuciones Miky" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
-                <div>
-                  <h1 style={{ fontSize: '1.4rem', color: '#000', margin: 0, fontWeight: 900, lineHeight: 1 }}>Distribuciones Miky</h1>
-                  <p style={{ marginTop: '0.05rem', fontSize: '0.75rem', fontWeight: 'bold', color: '#444' }}>DISTRIBUIDORA DE ALIMENTOS</p>
-                  <p style={{ marginTop: '0', fontSize: '0.7rem' }}>Jeronimo Luis de Cabrera esq. Patagonia</p>
+      {/* PRINTABLE AREA (A4/REMITO) */}
+      {printMode === "remito" && (
+        <div className="print-only remito-print" style={{ height: '148.5mm', width: '210mm', overflow: 'hidden' }}>
+          {lastSale && (
+            <div style={{ padding: '1rem', color: 'black', background: 'white', width: printWidth, transform: `scale(${printScale})`, transformOrigin: 'top left' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid black', paddingBottom: '0.4rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <img src="/logo.jpg" alt="Logo Distribuciones Miky" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                  <div>
+                    <h1 style={{ fontSize: '1.4rem', color: '#000', margin: 0, fontWeight: 900, lineHeight: 1 }}>Distribuciones Miky</h1>
+                    <p style={{ marginTop: '0.05rem', fontSize: '0.75rem', fontWeight: 'bold', color: '#444' }}>DISTRIBUIDORA DE ALIMENTOS</p>
+                    <p style={{ marginTop: '0', fontSize: '0.7rem' }}>Jeronimo Luis de Cabrera esq. Patagonia</p>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <h2 style={{ fontSize: '1.1rem', margin: 0 }}>{lastSale.type.toUpperCase()}</h2>
+                  <p style={{ margin: '0.1rem 0 0', fontSize: '0.75rem' }}>Fecha: {new Date(lastSale.createdAt).toLocaleDateString()}</p>
+                  <p style={{ margin: 0, fontSize: '0.7rem' }}>TEL: 3522649181 / 3522402188</p>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <h2 style={{ fontSize: '1.1rem', margin: 0 }}>{lastSale.type.toUpperCase()}</h2>
-                <p style={{ margin: '0.1rem 0 0', fontSize: '0.75rem' }}>Fecha: {new Date(lastSale.createdAt).toLocaleDateString()}</p>
-                <p style={{ margin: 0, fontSize: '0.7rem' }}>TEL: 3522649181 / 3522402188</p>
+
+              <div style={{ marginBottom: '0.5rem', fontSize: '0.8rem', lineHeight: '1.2' }}>
+                <h4 style={{ textTransform: 'uppercase', margin: '0 0 0.1rem 0', fontSize: '0.75rem' }}>Cliente:</h4>
+                <p style={{ margin: 0 }}><strong>{lastSale.customerName || 'Consumidor Final'}</strong></p>
+                <p style={{ margin: 0 }}>Tel: {lastSale.customerPhone || '-'}{lastSale.customerAddress ? ` | Dir: ${lastSale.customerAddress}` : ''}</p>
               </div>
-            </div>
 
-            <div style={{ marginBottom: '0.5rem', fontSize: '0.8rem', lineHeight: '1.2' }}>
-              <h4 style={{ textTransform: 'uppercase', margin: '0 0 0.1rem 0', fontSize: '0.75rem' }}>Cliente:</h4>
-              <p style={{ margin: 0 }}><strong>{lastSale.customerName || 'Consumidor Final'}</strong></p>
-              <p style={{ margin: 0 }}>Tel: {lastSale.customerPhone || '-'}{lastSale.customerAddress ? ` | Dir: ${lastSale.customerAddress}` : ''}</p>
-            </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '0.5rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', textAlign: 'left', fontSize: '0.75rem' }}>
+                    <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>Descripción</th>
+                    <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>Cant.</th>
+                    <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>P.Unit</th>
+                    <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lastSale.items.map((item: any, idx: number) => {
+                    const product = products.find(p => p.id === item.productId);
+                    return (
+                      <tr key={idx} style={{ fontSize: '0.75rem' }}>
+                        <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>{product?.name || 'Producto'}</td>
+                        <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>{item.quantity}</td>
+                        <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>${item.price.toFixed(2)}</td>
+                        <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>${item.subtotal.toFixed(2)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
 
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '0.5rem' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc', textAlign: 'left', fontSize: '0.75rem' }}>
-                  <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>Descripción</th>
-                  <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>Cant.</th>
-                  <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>P.Unit</th>
-                  <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lastSale.items.map((item: any, idx: number) => {
-                  const product = products.find(p => p.id === item.productId);
-                  return (
-                    <tr key={idx} style={{ fontSize: '0.75rem' }}>
-                      <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>{product?.name || 'Producto'}</td>
-                      <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>{item.quantity}</td>
-                      <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>${item.price.toFixed(2)}</td>
-                      <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>${item.subtotal.toFixed(2)}</td>
+              <div style={{ textAlign: 'right', fontSize: '1rem', marginTop: '0.5rem' }}>
+                <p style={{ margin: 0 }}>TOTAL: <strong>${lastSale.total.toFixed(2)}</strong></p>
+              </div>
+
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PRINTABLE AREA (THERMAL TICKET 80MM) */}
+      {printMode === "ticket" && (
+        <div className="print-only ticket-print" style={{ width: '80mm', color: 'black', background: 'white', padding: '5mm', fontFamily: 'monospace', boxSizing: 'border-box' }}>
+          {lastSale && (
+            <div style={{ width: '100%', maxWidth: '70mm' }}> {/* Safe width slightly smaller than 80mm to avoid clipping */}
+              <div style={{ textAlign: 'center', marginBottom: '5mm', borderBottom: '1px dashed black', paddingBottom: '3mm' }}>
+                <img src="/logo.jpg" alt="Logo" style={{ width: '35px', height: '35px', borderRadius: '50%', marginBottom: '2mm' }} />
+                <h1 style={{ fontSize: '1.1rem', margin: 0 }}>DISTRIB. MIKY</h1>
+                <p style={{ fontSize: '0.65rem', margin: 0 }}>J.L. de Cabrera esq. Patagonia</p>
+                <p style={{ fontSize: '0.65rem', margin: 0 }}>Tel: 3522649181 / 3522402188</p>
+              </div>
+
+              <div style={{ fontSize: '0.75rem', marginBottom: '3mm' }}>
+                <p style={{ margin: 0 }}><strong>{lastSale.type.toUpperCase()}</strong></p>
+                <p style={{ margin: 0 }}>Fecha: {new Date(lastSale.createdAt).toLocaleDateString()} {new Date(lastSale.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                <div style={{ marginTop: '2mm', borderTop: '1px dashed black', paddingTop: '1mm' }}>
+                  <p style={{ margin: 0 }}>Cliente: {lastSale.customerName || 'Consumidor Final'}</p>
+                  {lastSale.customerPhone && <p style={{ margin: 0 }}>Tel: {lastSale.customerPhone}</p>}
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px dashed black', paddingTop: '2mm' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.7rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid black' }}>
+                      <th style={{ textAlign: 'left', paddingBottom: '1mm', width: '70%' }}>ITEM</th>
+                      <th style={{ textAlign: 'right', paddingBottom: '1mm', width: '30%' }}>TOTAL</th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {lastSale.items.map((item: any, idx: number) => {
+                      const product = products.find(p => p.id === item.productId);
+                      return (
+                        <tr key={idx}>
+                          <td style={{ paddingTop: '1.5mm', paddingBottom: '1.5mm', paddingRight: '1mm' }}>
+                            <div style={{ fontWeight: 'bold', wordBreak: 'break-all' }}>{product?.name || 'Producto'}</div>
+                            <div>{item.quantity} x ${item.price.toFixed(2)}</div>
+                          </td>
+                          <td style={{ textAlign: 'right', verticalAlign: 'bottom', paddingBottom: '1.5mm' }}>
+                            ${item.subtotal.toFixed(2)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-            <div style={{ textAlign: 'right', fontSize: '1rem', marginTop: '0.5rem' }}>
-              <p style={{ margin: 0 }}>TOTAL: <strong>${lastSale.total.toFixed(2)}</strong></p>
+              <div style={{ marginTop: '4mm', borderTop: '1.5px solid black', paddingTop: '2mm', textAlign: 'right' }}>
+                <p style={{ margin: 0, fontSize: '1rem', fontWeight: 'bold' }}>TOTAL: ${lastSale.total.toFixed(2)}</p>
+              </div>
+
+              <div style={{ marginTop: '6mm', textAlign: 'center', fontSize: '0.65rem' }}>
+                <p style={{ margin: 0 }}>¡Gracias por su compra!</p>
+                <p style={{ margin: 0 }}>Distribuciones Miky</p>
+              </div>
+              
+              {/* Extra spacing for thermal printer cut */}
+              <div style={{ height: '10mm' }}></div>
             </div>
-
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {showManageCategories && (
         <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, backdropFilter: 'blur(8px)' }}>
