@@ -1,0 +1,1152 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { Plus, Package, ShoppingCart, BarChart3, Search, Save, X, Trash2, Pencil, User as UserIcon, Phone, MapPin, Download, Share2, FileSpreadsheet, Link as LinkIcon } from "lucide-react";
+
+export default function Home() {
+  const [activeTab, setActiveTab] = useState("billing");
+  const [products, setProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [lastSale, setLastSale] = useState<any>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [salesHistory, setSalesHistory] = useState<any[]>([]);
+  const getLocalToday = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const [dateRange, setDateRange] = useState({
+    startDate: getLocalToday(),
+    endDate: getLocalToday()
+  });
+
+  // New Product Form State
+  const [newProduct, setNewProduct] = useState({
+    name: "", code: "", categoryId: "", unitType: "kg",
+    buyPrice: "", sellPrice: "", stock: "0", baseUnit: "kg",
+    conversionFactor: "1",
+    newCategoryName: ""
+  });
+
+  // Billing & Customer State
+  const [cart, setCart] = useState<any[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [customer, setCustomer] = useState({ name: "", phone: "", address: "" });
+  const [inventorySearchTerm, setInventorySearchTerm] = useState("");
+  const [stockFilter, setStockFilter] = useState<"all" | "negative" | "low" | "ok">("all");
+  const [showAllLowStock, setShowAllLowStock] = useState(false);
+  const [enableStock, setEnableStock] = useState(true);
+  const [showManageCategories, setShowManageCategories] = useState(false);
+
+  // Deterministic scale calculation to ALWAYS fit within a 148.5mm (half A4) boundary.
+  // Base metadata height drastically squashed via CSS to ~220px. Each row is ~20px. Target safe height 480px.
+  const printScale = lastSale ? Math.min(1, 480 / (220 + lastSale.items.length * 20)) : 1;
+  const printWidth = `${(100 / printScale).toFixed(2)}%`;
+
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const subtotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
+
+  useEffect(() => {
+    fetchSettings();
+    fetchProducts();
+    fetchCategories();
+    fetchStats();
+    fetchSalesHistory();
+  }, [dateRange]);
+
+  const fetchSettings = async () => {
+    // Check localStorage first as fallback
+    const localStock = localStorage.getItem("enableStock");
+    if (localStock !== null) {
+      setEnableStock(localStock === "true");
+    }
+
+    try {
+      const res = await fetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.enableStock !== undefined) {
+          setEnableStock(data.enableStock);
+          localStorage.setItem("enableStock", data.enableStock.toString());
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching settings:", err);
+    }
+  };
+
+  const toggleStock = async () => {
+    const newState = !enableStock;
+    setEnableStock(newState);
+    localStorage.setItem("enableStock", newState.toString());
+
+    try {
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enableStock: newState })
+      });
+      fetchStats();
+    } catch (err) {
+      console.error("Setting sync failed (DB not ready), using local storage fallback.");
+      // We don't revert state here because we want local persistence to work even if DB is down
+    }
+  };
+
+  // Link sharing function
+  const copyPublicLink = () => {
+    const url = window.location.origin + "/precios";
+    navigator.clipboard.writeText(url);
+    alert("¡Link copiado! Ya podés enviarlo por WhatsApp: " + url);
+  };
+
+  const fetchStats = async () => {
+    try {
+      const params = new URLSearchParams({
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate
+      });
+      const res = await fetch(`/api/stats?${params.toString()}`);
+      const data = await res.json();
+      if (!data.error) setStats(data);
+    } catch (err) {
+      console.error("Error fetching stats:", err);
+    }
+  };
+
+  const fetchProducts = async () => {
+    const res = await fetch("/api/products");
+    const data = await res.json();
+    if (!data.error) setProducts(data);
+  };
+
+  const fetchCategories = async () => {
+    const res = await fetch("/api/categories");
+    const data = await res.json();
+    if (!data.error) setCategories(data);
+  };
+
+  const fetchSalesHistory = async () => {
+    try {
+      const params = new URLSearchParams({
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate
+      });
+      const res = await fetch(`/api/sales?${params.toString()}`);
+      const data = await res.json();
+      if (!data.error && Array.isArray(data)) setSalesHistory(data);
+    } catch (err) {
+      console.error("Error fetching sales history:", err);
+    }
+  };
+
+  const deleteSale = async (saleId: string) => {
+    if (!confirm("¿Eliminar esta factura? El stock de los productos será restaurado.")) return;
+    const res = await fetch(`/api/sales/${saleId}`, { method: 'DELETE' });
+    if (res.ok) {
+      fetchSalesHistory();
+      fetchStats();
+      fetchProducts();
+    } else {
+      const err = await res.json();
+      alert(err.error || "Error al eliminar la venta");
+    }
+  };
+
+  const resetNewProduct = () => ({
+    name: "", code: "", categoryId: "", unitType: "kg",
+    buyPrice: "", sellPrice: "", stock: "0", baseUnit: "kg",
+    conversionFactor: "1", newCategoryName: ""
+  });
+
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const url = editingProduct ? `/api/products/${editingProduct.id}` : "/api/products";
+    const method = editingProduct ? "PUT" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...newProduct,
+        newCategoryName: newProduct.categoryId === "new" ? newProduct.newCategoryName : undefined
+      }),
+    });
+    if (res.ok) {
+      setShowAddProduct(false);
+      setEditingProduct(null);
+      fetchProducts();
+      fetchCategories();
+      setNewProduct(resetNewProduct());
+    }
+  };
+
+  const handleOpenEdit = (product: any) => {
+    setEditingProduct(product);
+    setNewProduct({
+      name: product.name,
+      code: product.code || "",
+      categoryId: product.categoryId,
+      unitType: product.unitType,
+      buyPrice: (product.buyPrice ?? 0).toString(),
+      sellPrice: (product.sellPrice ?? 0).toString(),
+      stock: (product.stock ?? 0).toString(),
+      baseUnit: product.baseUnit || "kg",
+      conversionFactor: product.conversionFactor?.toString() || "1",
+      newCategoryName: ""
+    });
+    setShowAddProduct(true);
+  };
+
+  const deleteCategory = async (id: string) => {
+    if (!confirm("¿Eliminar esta categoría? Solo se puede eliminar si no tiene productos asociados.")) return;
+    try {
+      const res = await fetch(`/api/categories?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (res.ok) {
+        fetchCategories();
+      } else {
+        alert(data.error || "No se pudo eliminar la categoría");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteProduct = async (product: any) => {
+    if (!confirm(`¿Estás seguro de eliminar "${product.name}"? Esta acción no se puede deshacer.`)) return;
+    const res = await fetch(`/api/products/${product.id}`, { method: "DELETE" });
+    if (res.ok) {
+      fetchProducts();
+    } else {
+      const data = await res.json();
+      alert(data.error || "Error al eliminar el producto");
+    }
+  };
+
+  useEffect(() => {
+    if (searchTerm.length > 1) {
+      const filtered = products.filter(p =>
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.code && p.code.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+      setSearchResults(filtered);
+    } else {
+      setSearchResults([]);
+    }
+  }, [searchTerm, products]);
+
+  const getAvailableStock = (product: any) => {
+    // Stock is stored in baseUnit (e.g. kg). Return in sell unit.
+    const cf = product.conversionFactor || 1;
+    // If baseUnit === 'g' and unitType = 'kg', cf=1000: availableKg = stock/1000
+    // If baseUnit === 'kg' and unitType = 'kg', cf=1: availableKg = stock/1
+    // If baseUnit === 'u'  and unitType = 'unit', cf=1: available units = stock/1
+    return product.stock / cf;
+  };
+
+  const addToCart = (product: any) => {
+    const availableStock = getAvailableStock(product);
+    const existing = cart.find(item => item.productId === product.id);
+    const currentInCart = existing ? (parseFloat(existing.quantity) || 0) : 0;
+    const step = 1;
+
+    if (enableStock) {
+      if (availableStock <= 0) {
+        if (!window.confirm(`⚠️ "${product.name}" no tiene stock registrado. ¿Deseas agregarlo a la venta de todos modos?`)) {
+          setSearchTerm("");
+          return;
+        }
+      } else if (currentInCart + step > availableStock) {
+        if (!window.confirm(`⚠️ Stock insuficiente para "${product.name}". Disponible: ${availableStock.toFixed(product.unitType === 'kg' ? 3 : 0)} ${product.unitType === 'kg' ? 'kg' : 'u'}. ¿Deseas vender de todos modos?`)) {
+          setSearchTerm("");
+          return;
+        }
+      }
+    }
+
+    if (existing) {
+      updateCartQuantity(product.id, (currentInCart + step).toString(), product);
+    } else {
+      setCart([...cart, {
+        productId: product.id,
+        name: product.name,
+        price: product.sellPrice,
+        quantity: step,
+        subtotal: product.sellPrice * step,
+        unitType: product.unitType,
+        availableStock: availableStock
+      }]);
+    }
+    setSearchTerm("");
+  };
+
+  const handleBarcodeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && searchTerm.trim() !== "") {
+      // Prioritize exact match by code (barcode scanner)
+      const exactMatch = products.find(
+        (p: any) => p.code?.toLowerCase() === searchTerm.trim().toLowerCase()
+      );
+
+      if (exactMatch) {
+        addToCart(exactMatch);
+        setSearchTerm("");
+      } else if (searchResults.length === 1) {
+        // If not exact by code, but there's only one search result (e.g. search by name found one item)
+        addToCart(searchResults[0]);
+        setSearchTerm("");
+      }
+    }
+  };
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleGlobalFocus = (e: KeyboardEvent) => {
+      if (e.key === "F2") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleGlobalFocus);
+    return () => window.removeEventListener("keydown", handleGlobalFocus);
+  }, []);
+
+  const updateCartQuantity = (id: string, qtyValue: string, productOverride?: any) => {
+    setCart(prev => prev.map(item => {
+      if (item.productId === id) {
+        const qty = qtyValue === "" ? 0 : parseFloat(qtyValue);
+        const newQty = isNaN(qty) ? 0 : qty;
+        // Get stock limit
+        const product = productOverride || products.find((p: any) => p.id === id);
+        const available = product ? getAvailableStock(product) : Infinity;
+        if (enableStock && newQty > available && available !== Infinity) {
+          if (!window.confirm(`⚠️ Stock insuficiente. Disponible: ${available.toFixed(product?.unitType === 'kg' ? 3 : 0)} ${product?.unitType === 'kg' ? 'kg' : 'u'}. ¿Continuar de todos modos?`)) {
+            return item; // don't update
+          }
+        }
+        return { ...item, quantity: qtyValue === "" ? "" : newQty, subtotal: (typeof newQty === 'number' ? newQty : 0) * item.price };
+      }
+      return item;
+    }));
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart(prev => prev.filter(item => item.productId !== id));
+  };
+
+  const processSale = async (type: string) => {
+    if (cart.length === 0) return;
+
+    const res = await fetch("/api/sales", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type,
+        items: cart,
+        sellerId: "seller-1",
+        customerName: customer.name,
+        customerPhone: customer.phone,
+        customerAddress: customer.address
+      }),
+    });
+
+    if (res.ok) {
+      const result = await res.json();
+      setLastSale(result);
+      setCart([]);
+      setCustomer({ name: "", phone: "", address: "" });
+      fetchProducts();
+      fetchStats();
+      fetchSalesHistory();
+      alert(`${type} Generado con éxito`);
+    } else {
+      const err = await res.json();
+      alert(`Error: ${err.error}`);
+    }
+  };
+
+  const shareWhatsApp = () => {
+    if (!lastSale) return;
+
+    const itemsList = lastSale.items.map((item: any) => {
+      const product = products.find(p => p.id === item.productId);
+      return `- ${product?.name || 'Producto'}: ${item.quantity} x $${item.price.toFixed(2)} = $${item.subtotal.toFixed(2)}`;
+    }).join('\n');
+
+    const message = `*Distribuciones Miky - ${lastSale.type}*\n\nHola ${lastSale.customerName || 'Cliente'},\n\nDetalle de tu compra:\n${itemsList}\n\n*TOTAL: $${lastSale.total.toFixed(2)}*\n\n_Para recibir el comprobante formal, por favor solicita que te adjunten el PDF descargado._`;
+
+    const url = `https://wa.me/${lastSale.customerPhone?.replace(/\D/g, '') || ''}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+  };
+
+
+  const printDocument = () => {
+    window.print();
+  };
+
+  return (
+    <main className="container" style={{ position: 'relative' }}>
+      {/* Decorative Background Elements */}
+      <div className="no-print" style={{ 
+        position: 'fixed', top: '-10%', left: '-10%', width: '40%', height: '40%', 
+        background: 'radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 70%)', 
+        filter: 'blur(60px)', zIndex: -1, pointerEvents: 'none' 
+      }}></div>
+      <div className="no-print" style={{ 
+        position: 'fixed', bottom: '-10%', right: '-10%', width: '40%', height: '40%', 
+        background: 'radial-gradient(circle, rgba(245, 158, 11, 0.1) 0%, transparent 70%)', 
+        filter: 'blur(60px)', zIndex: -1, pointerEvents: 'none' 
+      }}></div>
+
+      {/* BRANDING HEADER */}
+      <header className="main-header glass no-print" style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.2rem', borderRadius: 'var(--radius-lg)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <img src="/logo.jpg" alt="Logo" style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(255,255,255,0.1)' }} />
+            <div>
+              <h1 style={{ fontSize: '1.5rem', margin: 0, fontWeight: 800, letterSpacing: '-0.5px' }}>Distribuciones Miky</h1>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', fontSize: '0.75rem', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '1px', marginTop: '0.2rem' }}>
+                <span>Jeronimo Luis de Cabrera esq. Patagonia</span>
+                <span className="hide-mobile">|</span>
+                <span>3522649181 - 3522402188</span>
+              </div>
+            </div>
+          </div>
+          <div className="hide-mobile" style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+            Vendedor: <strong>Admin</strong>
+          </div>
+        </div>
+      </header>
+
+      <nav className="glass no-print" style={{
+        display: 'flex', gap: '0.5rem', padding: '0.5rem',
+        borderRadius: 'var(--radius-lg)', marginBottom: '1.5rem',
+        overflowX: 'auto'
+      }}>
+        <button onClick={() => setActiveTab("dashboard")} className={`nav-btn ${activeTab === 'dashboard' ? 'active' : ''}`} style={{ 
+          flex: 1, justifyContent: 'center', 
+          background: activeTab === 'dashboard' ? 'var(--primary-color)' : 'transparent',
+          boxShadow: activeTab === 'dashboard' ? '0 0 20px var(--primary-glow)' : 'none'
+        }}>
+          <BarChart3 size={20} /> <span className="hide-mobile">Dashboard</span>
+        </button>
+        <button onClick={() => setActiveTab("billing")} className={`nav-btn ${activeTab === 'billing' ? 'active' : ''}`} style={{ 
+          flex: 1, justifyContent: 'center',
+          background: activeTab === 'billing' ? 'var(--primary-color)' : 'transparent',
+          boxShadow: activeTab === 'billing' ? '0 0 20px var(--primary-glow)' : 'none'
+        }}>
+          <ShoppingCart size={20} /> <span className="hide-mobile">Vender</span>
+        </button>
+        <button onClick={() => setActiveTab("stock")} className={`nav-btn ${activeTab === 'stock' ? 'active' : ''}`} style={{ 
+          flex: 1, justifyContent: 'center',
+          background: activeTab === 'stock' ? 'var(--primary-color)' : 'transparent',
+          boxShadow: activeTab === 'stock' ? '0 0 20px var(--primary-glow)' : 'none'
+        }}>
+          <Package size={20} /> <span className="hide-mobile">Stock</span>
+        </button>
+      </nav>
+
+      <section className="no-print">
+        {activeTab === "stock" && (
+          <div className="glass card animate-in">
+            <header style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2>Gestión de Inventario</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: enableStock ? '#10b981' : 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: 'bold' }}>
+                    <input type="checkbox" checked={enableStock} onChange={toggleStock} style={{ marginRight: '0.5rem', cursor: 'pointer', accentColor: 'var(--primary-color)' }} />
+                    Stock: {enableStock ? 'ON' : 'OFF'}
+                  </label>
+                  <button className="secondary-btn" onClick={copyPublicLink} style={{ padding: '0.8rem 1.2rem', gap: '0.5rem', whiteSpace: 'nowrap', background: 'rgba(197, 160, 89, 0.1)', color: 'var(--primary-color)', border: '1px solid rgba(197, 160, 89, 0.3)' }}>
+                    <LinkIcon size={18} /> <span className="hide-mobile">Copiar Link Público</span>
+                  </button>
+                  <button className="primary-btn" onClick={() => setShowAddProduct(true)} style={{ background: 'var(--primary-color)', boxShadow: '0 4px 15px var(--primary-glow)' }}>
+                    <Plus size={20} /> <span className="hide-mobile">Nuevo Producto</span>
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div className="input-with-icon" style={{ position: 'relative', flex: 1, minWidth: '250px' }}>
+                  <Search className="search-icon" size={20} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    placeholder="Buscar en inventario (nombre o código)..."
+                    style={{ paddingLeft: '3rem' }}
+                    value={inventorySearchTerm}
+                    onChange={(e) => setInventorySearchTerm(e.target.value)}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.4rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                  <button
+                    onClick={() => setStockFilter("all")}
+                    style={{ padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', background: stockFilter === "all" ? 'var(--primary-color)' : 'transparent', color: stockFilter === "all" ? 'white' : 'var(--text-secondary)', border: 'none' }}
+                  >Todos</button>
+                  <button
+                    onClick={() => setStockFilter("low")}
+                    style={{ padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', background: stockFilter === "low" ? '#f59e0b' : 'transparent', color: stockFilter === "low" ? 'white' : '#f59e0b', border: 'none' }}
+                  >Stock Bajo</button>
+                </div>
+                <button 
+                  onClick={() => setShowManageCategories(true)}
+                  style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', padding: '0.4rem 1rem', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}
+                >
+                  <Pencil size={14} /> Gestionar Categorías
+                </button>
+              </div>
+            </header>
+
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Categoría</th>
+                    {enableStock && <th>Stock</th>}
+                    <th>Venta</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {products
+                    .filter((p: any) => {
+                      // Status filter
+                      if (stockFilter === "negative") {
+                        if (p.stock >= 0) return false;
+                      } else if (stockFilter === "low") {
+                        const threshold = p.baseUnit === 'g' ? 1000 : 5; // 1kg or 5 units
+                        if (p.stock >= threshold || p.stock < 0) return false;
+                      }
+
+                      // Text search
+                      const matchesText = p.name.toLowerCase().includes(inventorySearchTerm.toLowerCase()) ||
+                        (p.code && p.code.toLowerCase().includes(inventorySearchTerm.toLowerCase()));
+
+                      return matchesText;
+                    })
+                    .map((p: any) => (
+                      <tr key={p.id}>
+                        <td>{p.name}</td>
+                        <td>{p.category?.name}</td>
+                        {enableStock && (
+                          <td>
+                            <span style={{
+                              color: p.stock <= 0 ? '#ef4444' : p.stock < 500 ? '#f59e0b' : 'var(--secondary-color)',
+                              fontWeight: 'bold'
+                            }}>
+                              {getAvailableStock(p).toFixed(p.unitType === 'kg' ? 2 : 0)} {p.unitType === 'kg' ? 'kg' : 'u'}
+                            </span>
+                          </td>
+                        )}
+                        <td>${p.sellPrice} / {p.unitType}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                              className="icon-btn"
+                              onClick={() => handleOpenEdit(p)}
+                              title="Editar producto"
+                              style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', padding: '0.5rem', borderRadius: '0.5rem' }}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              className="icon-btn"
+                              onClick={() => handleDeleteProduct(p)}
+                              title="Eliminar producto"
+                              style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '0.5rem', borderRadius: '0.5rem' }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "billing" && (
+          <div className="billing-grid animate-in">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* Customer Data Card */}
+              <div className="glass card">
+                <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <UserIcon size={20} /> Datos del Cliente
+                </h3>
+                <div className="grid grid-3" style={{ gap: '1rem' }}>
+                  <div className="input-group">
+                    <label>Nombre / Razón Social</label>
+                    <input type="text" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
+                  </div>
+                  <div className="input-group">
+                    <label>Teléfono (WhatsApp)</label>
+                    <input type="text" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
+                  </div>
+                  <div className="input-group">
+                    <label>Dirección</label>
+                    <input type="text" value={customer.address} onChange={(e) => setCustomer({ ...customer, address: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sales Cart Card */}
+              <div className="glass card">
+                <header style={{ marginBottom: '1.5rem' }}>
+                  <h2>Mostrador de Ventas</h2>
+                  <div className="input-with-icon" style={{ marginTop: '1rem', position: 'relative' }}>
+                    <Search className="search-icon" size={20} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder="Buscar producto por nombre o código (F2 para enfocar)..."
+                      style={{ paddingLeft: '3rem' }}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onKeyDown={handleBarcodeKeyDown}
+                    />
+                    {searchResults.length > 0 && (
+                      <div className="search-results glass-deep animate-in" style={{ 
+                        position: 'absolute', top: '100%', left: 0, right: 0, 
+                        zIndex: 1000, marginTop: '0.5rem', maxHeight: '400px', 
+                        overflowY: 'auto', borderRadius: 'var(--radius-md)', 
+                        background: '#151b2b', 
+                        backdropFilter: 'blur(30px)', border: '1px solid var(--primary-color)',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.5), 0 0 15px var(--primary-glow)'
+                      }}>
+                        {searchResults.map(p => (
+                          <div key={p.id} className="search-item" onClick={() => addToCart(p)} style={{ 
+                            padding: '1.2rem', borderBottom: '1px solid var(--border-color)', 
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                            cursor: 'pointer', transition: 'all 0.2s',
+                            opacity: getAvailableStock(p) <= 0 ? 0.6 : 1
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)'}
+                          onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <div>
+                              <strong style={{ fontSize: '1.1rem', color: 'white' }}>{p.name}</strong><br />
+                              <div style={{ marginTop: '0.3rem', display: 'flex', gap: '1rem', fontSize: '0.9rem' }}>
+                                <span style={{ color: 'var(--text-secondary)' }}>{p.code}</span>
+                                <span style={{ color: 'var(--secondary-color)', fontWeight: 'bold' }}>${p.sellPrice}/{p.unitType}</span>
+                              </div>
+                              {enableStock && (
+                                <small style={{ display: 'block', marginTop: '0.2rem', color: getAvailableStock(p) <= 0 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
+                                  Stock: {getAvailableStock(p).toFixed(p.unitType === 'kg' ? 3 : 0)} {p.unitType === 'kg' ? 'kg' : 'u'}
+                                  {getAvailableStock(p) <= 0 && ' ⚠️ Sin stock'}
+                                </small>
+                              )}
+                            </div>
+                            <Plus size={20} style={{ color: 'var(--primary-color)' }} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </header>
+
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Producto</th>
+                        <th>Cantidad</th>
+                        <th>Subtotal</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cart.map(item => (
+                        <tr key={item.productId}>
+                          <td>{item.name}</td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <input
+                                type="number"
+                                step={item.unitType === 'kg' ? '0.05' : '1'}
+                                value={item.quantity}
+                                onChange={(e) => updateCartQuantity(item.productId, e.target.value)}
+                                style={{ width: '60px', padding: '0.4rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'white' }}
+                              />
+                              <small style={{ fontSize: '0.75rem', opacity: 0.7 }}>{item.unitType}</small>
+                            </div>
+                          </td>
+                          <td style={{ fontWeight: 'bold' }}>${item.subtotal.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button onClick={() => removeFromCart(item.productId)} style={{ color: '#ef4444', background: 'transparent', border: 'none', padding: '0.4rem', cursor: 'pointer' }}>
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div className="glass card" style={{ height: 'fit-content' }}>
+                <h3 style={{ marginBottom: '1.5rem' }}>Resumen de Venta</h3>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <span>Subtotal</span>
+                    <strong>${subtotal.toFixed(2)}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+                    <span>Impuestos (0%)</span>
+                    <strong>$0.00</strong>
+                  </div>
+                  <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '1rem 0' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.5rem', fontWeight: 'bold' }}>
+                    <span>TOTAL</span>
+                    <span style={{ color: 'var(--secondary-color)' }}>${subtotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="action-buttons-grid" style={{ marginTop: '2rem' }}>
+                  <button className="secondary-btn" onClick={() => processSale("Remito")} style={{ width: '100%', justifyContent: 'center' }}>Remito</button>
+                  <button className="primary-btn" onClick={() => processSale("Factura")} style={{ width: '100%', justifyContent: 'center' }}>Facturar</button>
+                </div>
+              </div>
+
+              {lastSale && (
+                <div className="glass card animate-in" style={{ borderColor: 'var(--secondary-color)', background: 'rgba(16, 185, 129, 0.05)' }}>
+                  <h3 style={{ marginBottom: '1rem', color: 'var(--secondary-color)' }}>¡Venta Exitosa!</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <button className="primary-btn" onClick={printDocument} style={{ width: '100%', justifyContent: 'center' }}>
+                      <Download size={18} /> Descargar PDF (Imprimir)
+                    </button>
+                    <button className="secondary-btn" onClick={shareWhatsApp} style={{ width: '100%', justifyContent: 'center', borderColor: '#25D366', color: '#25D366', background: 'rgba(37, 211, 102, 0.1)' }}>
+                      <Share2 size={18} /> Enviar por WhatsApp
+                    </button>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', marginTop: '-0.5rem' }}>
+                      Tip: Descarga el PDF y adjúntalo manualmente en WhatsApp.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "dashboard" && (
+          <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            {/* Header with Date Filter */}
+            <div className="glass card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.2rem 2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+                <BarChart3 size={24} style={{ color: 'var(--primary-color)' }} />
+                <h2 style={{ margin: 0 }}>Panel de Control</h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 auto', minWidth: '150px' }}>
+                  <label style={{ whiteSpace: 'nowrap', fontSize: '0.9rem' }}>Desde:</label>
+                  <input
+                    type="date"
+                    value={dateRange.startDate}
+                    onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+                    style={{ padding: '0.4rem 0.8rem', width: '100%' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 auto', minWidth: '150px' }}>
+                  <label style={{ whiteSpace: 'nowrap', fontSize: '0.9rem' }}>Hasta:</label>
+                  <input
+                    type="date"
+                    value={dateRange.endDate}
+                    onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+                    style={{ padding: '0.4rem 0.8rem', width: '100%' }}
+                  />
+                </div>
+                <button
+                  className="secondary-btn"
+                  onClick={() => {
+                    const d = new Date();
+                    const year = d.getFullYear();
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    const today = `${year}-${month}-${day}`;
+                    setDateRange({ startDate: today, endDate: today });
+                  }}
+                  style={{ padding: '0.4rem 1.2rem', height: '44px' }}
+                >
+                  Hoy
+                </button>
+              </div>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.2rem' }}>
+              <div className="glass card stats-card">
+                <div className="stats-icon" style={{ background: 'rgba(197, 160, 89, 0.08)', color: 'var(--primary-color)' }}><ShoppingCart size={24} /></div>
+                <div>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Ventas Totales</p>
+                  <h3 style={{ color: 'var(--text-primary)' }}>{stats?.salesCount || 0}</h3>
+                </div>
+              </div>
+              <div className="glass card stats-card">
+                <div className="stats-icon" style={{ background: 'rgba(197, 160, 89, 0.08)', color: 'var(--primary-color)' }}><BarChart3 size={24} /></div>
+                <div>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Ingresos Brutos</p>
+                  <h3 style={{ color: 'var(--text-primary)' }}>${stats?.revenue?.toFixed(2) || '0.00'}</h3>
+                </div>
+              </div>
+              <div className="glass card stats-card">
+                <div className="stats-icon" style={{ background: 'rgba(197, 160, 89, 0.08)', color: 'var(--primary-color)' }}><Save size={24} /></div>
+                <div>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Ganancia Est.</p>
+                  <h3 style={{ color: 'var(--text-primary)' }}>${stats?.profit?.toFixed(2) || '0.00'}</h3>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="dashboard-widgets-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+              {/* Sales History */}
+              <div className="glass card">
+                <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Trash2 size={18} style={{ color: '#ef4444' }} /> Historial de Ventas
+                  <small style={{ color: 'var(--text-secondary)', fontWeight: 'normal', marginLeft: 'auto' }}>Podés eliminar facturas erróneas — el stock se restaura automáticamente</small>
+                </h3>
+                <div className="table-container scroll-container" style={{ maxHeight: '450px' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Tipo</th>
+                        <th>Cliente</th>
+                        <th>Total</th>
+                        <th>Eliminar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {salesHistory.length === 0 && (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>No hay ventas en este período</td></tr>
+                      )}
+                      {salesHistory.map((sale: any) => (
+                        <tr key={sale.id}>
+                          <td style={{ whiteSpace: 'nowrap' }}>{new Date(sale.createdAt).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                          <td><span style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>{sale.type}</span></td>
+                          <td style={{ color: 'var(--text-secondary)' }}>{sale.customerName || 'Consumidor Final'}</td>
+                          <td style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>${sale.total.toFixed(2)}</td>
+                          <td>
+                            <button
+                              onClick={() => deleteSale(sale.id)}
+                              style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', padding: '0.35rem 0.7rem', borderRadius: '0.4rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem' }}
+                              title="Eliminar esta venta y restaurar stock"
+                            >
+                              <Trash2 size={13} /> Anular
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Top Products & Low Stock */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+                {/* Top Products */}
+                <div className="glass card">
+                  <h3 style={{ marginBottom: '1.5rem' }}>Top 5 Productos</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {stats?.topProducts?.map((p: any, i: number) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.8rem', borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)' }}>
+                        <div>
+                          <strong style={{ display: 'block' }}>{p.name}</strong>
+                          <small style={{ color: 'var(--text-secondary)' }}>{p.quantity} vendidos</small>
+                        </div>
+                        <span style={{ fontWeight: 'bold', color: 'var(--primary-color)' }}>${p.revenue.toFixed(2)}</span>
+                      </div>
+                    ))}
+                    {(!stats?.topProducts || stats.topProducts.length === 0) && (
+                      <p style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>No hay datos suficientes</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Low Stock Alert */}
+                {enableStock && (
+                  <div className="glass card">
+                    <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ color: '#f59e0b' }}>⚠️</span> Productos con Bajo Stock
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                      {stats?.lowStockItems?.length > 0 ? (
+                        <>
+                          {(showAllLowStock ? stats.lowStockItems : stats.lowStockItems.slice(0, 5)).map((item: any) => (
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.7rem 1rem', borderRadius: 'var(--radius-md)', background: item.stock <= 0 ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.07)', border: `1px solid ${item.stock <= 0 ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}` }}>
+                              <div>
+                                <strong style={{ display: 'block', fontSize: '0.95rem' }}>{item.name}</strong>
+                                <small style={{ color: 'var(--text-secondary)' }}>{item.category?.name}</small>
+                              </div>
+                              <span style={{ fontWeight: 'bold', color: item.stock <= 0 ? '#ef4444' : '#f59e0b', fontSize: '0.9rem' }}>
+                                {(item.stock / (item.baseUnit === 'g' ? 1000 : 1)).toFixed(item.unitType === 'kg' ? 2 : 0)} {item.unitType === 'kg' ? 'kg' : 'u'}
+                                {item.stock <= 0 && ' — Sin stock'}
+                              </span>
+                            </div>
+                          ))}
+                          {stats.lowStockItems.length > 5 && (
+                            <button
+                              onClick={() => setShowAllLowStock(!showAllLowStock)}
+                              style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', padding: '0.5rem', borderRadius: 'var(--radius-md)', marginTop: '0.5rem', cursor: 'pointer', transition: 'all 0.2s', fontWeight: 'bold', fontSize: '0.9rem' }}
+                              onMouseOver={(e) => e.currentTarget.style.color = 'white'}
+                              onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+                            >
+                              {showAllLowStock ? 'Ver Menos Mostrar 5 de ' + stats.lowStockItems.length : `Ver Todos (${stats.lowStockItems.length})`}
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <p style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '1.5rem' }}>✅ Todos los productos tienen stock suficiente</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* PRINTABLE AREA (FORCED HALF A4 PAGE FORMAT) */}
+      <div className="print-only" style={{ height: '148.5mm', width: '210mm', overflow: 'hidden' }}>
+        {lastSale && (
+          <div style={{ padding: '1rem', color: 'black', background: 'white', width: printWidth, transform: `scale(${printScale})`, transformOrigin: 'top left' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid black', paddingBottom: '0.4rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <img src="/logo.jpg" alt="Logo Distribuciones Miky" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                <div>
+                  <h1 style={{ fontSize: '1.4rem', color: '#000', margin: 0, fontWeight: 900, lineHeight: 1 }}>Distribuciones Miky</h1>
+                  <p style={{ marginTop: '0.05rem', fontSize: '0.75rem', fontWeight: 'bold', color: '#444' }}>DISTRIBUIDORA DE ALIMENTOS</p>
+                  <p style={{ marginTop: '0', fontSize: '0.7rem' }}>Jeronimo Luis de Cabrera esq. Patagonia</p>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <h2 style={{ fontSize: '1.1rem', margin: 0 }}>{lastSale.type.toUpperCase()}</h2>
+                <p style={{ margin: '0.1rem 0 0', fontSize: '0.75rem' }}>Fecha: {new Date(lastSale.createdAt).toLocaleDateString()}</p>
+                <p style={{ margin: 0, fontSize: '0.7rem' }}>TEL: 3522649181 / 3522402188</p>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '0.5rem', fontSize: '0.8rem', lineHeight: '1.2' }}>
+              <h4 style={{ textTransform: 'uppercase', margin: '0 0 0.1rem 0', fontSize: '0.75rem' }}>Cliente:</h4>
+              <p style={{ margin: 0 }}><strong>{lastSale.customerName || 'Consumidor Final'}</strong></p>
+              <p style={{ margin: 0 }}>Tel: {lastSale.customerPhone || '-'}{lastSale.customerAddress ? ` | Dir: ${lastSale.customerAddress}` : ''}</p>
+            </div>
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '0.5rem' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', textAlign: 'left', fontSize: '0.75rem' }}>
+                  <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>Descripción</th>
+                  <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>Cant.</th>
+                  <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>P.Unit</th>
+                  <th style={{ padding: '0.2rem', borderBottom: '1px solid black' }}>Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lastSale.items.map((item: any, idx: number) => {
+                  const product = products.find(p => p.id === item.productId);
+                  return (
+                    <tr key={idx} style={{ fontSize: '0.75rem' }}>
+                      <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>{product?.name || 'Producto'}</td>
+                      <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>{item.quantity}</td>
+                      <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>${item.price.toFixed(2)}</td>
+                      <td style={{ padding: '0.2rem', borderBottom: '1px solid #eee' }}>${item.subtotal.toFixed(2)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+
+            <div style={{ textAlign: 'right', fontSize: '1rem', marginTop: '0.5rem' }}>
+              <p style={{ margin: 0 }}>TOTAL: <strong>${lastSale.total.toFixed(2)}</strong></p>
+            </div>
+
+          </div>
+        )}
+      </div>
+
+      {showManageCategories && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, backdropFilter: 'blur(8px)' }}>
+          <div className="glass modal-content card animate-in" style={{ width: '90%', maxWidth: '500px' }}>
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2>Gestionar Categorías</h2>
+              <button onClick={() => setShowManageCategories(false)} style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
+            </header>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', maxHeight: '400px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+              {categories.map((cat: any) => (
+                <div key={cat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.8rem 1rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+                  <span>{cat.name}</span>
+                  <button 
+                    onClick={() => deleteCategory(cat.id)}
+                    style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', border: 'none', padding: '0.4rem', borderRadius: '4px', cursor: 'pointer' }}
+                    title="Eliminar categoría"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+              {categories.length === 0 && <p style={{ textAlign: 'center', opacity: 0.5 }}>No hay categorías registradas.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddProduct && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="glass modal-content card animate-in" style={{ width: '90%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ fontSize: '1.5rem' }}>{editingProduct ? 'Editar Producto' : 'Registrar Producto'}</h2>
+              <button onClick={() => { setShowAddProduct(false); setEditingProduct(null); setNewProduct(resetNewProduct()); }} style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', width: '36px', height: '36px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
+            </header>
+
+            <form onSubmit={handleCreateProduct} className="product-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.2rem' }}>
+              <div className="input-group">
+                <label>Nombre</label>
+                <input type="text" value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} placeholder="Ej: Nueces Mariposa" required />
+              </div>
+              <div className="input-group">
+                <label>Categoría</label>
+                <select className="custom-select" value={newProduct.categoryId} onChange={(e) => setNewProduct({ ...newProduct, categoryId: e.target.value })} required style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: 'var(--text-primary)' }}>
+                  <option value="" style={{ color: 'black' }}>Seleccionar...</option>
+                  <option value="new" style={{ color: 'black', fontWeight: 'bold' }}>+ Nueva Categoría...</option>
+                  {categories.map((c: any) => (<option key={c.id} value={c.id} style={{ color: 'black' }}>{c.name}</option>))}
+                </select>
+              </div>
+
+              {newProduct.categoryId === "new" && (
+                <div className="input-group animate-in">
+                  <label>Nombre de la Nueva Categoría</label>
+                  <input
+                    type="text"
+                    value={newProduct.newCategoryName}
+                    onChange={(e) => setNewProduct({ ...newProduct, newCategoryName: e.target.value })}
+                    placeholder="Ej: Semillas"
+                    required
+                  />
+                </div>
+              )}
+              <div className="input-group">
+                <label>Tipo de Venta</label>
+                <select className="custom-select" value={newProduct.unitType} onChange={(e) => setNewProduct({ ...newProduct, unitType: e.target.value })} style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: 'var(--text-primary)' }}>
+                  <option value="kg" style={{ color: 'black' }}>Por kilogramo</option>
+                  <option value="unit" style={{ color: 'black' }}>Por unidad</option>
+                </select>
+              </div>
+              <div className="input-group">
+                <label>Precio Venta</label>
+                <input type="number" step="0.01" value={newProduct.sellPrice} onChange={(e) => setNewProduct({ ...newProduct, sellPrice: e.target.value })} required />
+              </div>
+              <div className="input-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  Stock Actual
+                  <span title="Cantidad disponible en la unidad de venta (kg o unidades)" style={{ cursor: 'help', fontSize: '1rem', background: 'rgba(255,255,255,0.1)', width: '18px', height: '18px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>?</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={newProduct.stock}
+                  onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+              <div className="input-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  Unidad Base
+                  <span title="Unidad mínima en la que mides el stock (Ej: 'g' para granos, 'u' para cajas)" style={{ cursor: 'help', fontSize: '1rem', background: 'rgba(255,255,255,0.1)', width: '18px', height: '18px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>?</span>
+                </label>
+                <select
+                  className="custom-select"
+                  value={newProduct.baseUnit}
+                  onChange={(e) => setNewProduct({ ...newProduct, baseUnit: e.target.value })}
+                  style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: 'var(--text-primary)' }}
+                >
+                  <option value="g" style={{ color: 'black' }}>Gramos (g)</option>
+                  <option value="u" style={{ color: 'black' }}>Unidad (u)</option>
+                  <option value="kg" style={{ color: 'black' }}>Kilogramos (kg)</option>
+                </select>
+              </div>
+
+              <div style={{ gridColumn: 'span 2', display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                <button type="submit" className="primary-btn" style={{ flex: 1 }}>
+                  <Save size={20} /> {editingProduct ? 'Guardar Cambios' : 'Guardar Producto'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        .billing-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+        .action-buttons-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        @media (max-width: 480px) {
+          .action-buttons-grid { grid-template-columns: 1fr; }
+        }
+        .product-form-grid { grid-template-columns: 1fr; }
+        @media (min-width: 1024px) {
+          .billing-grid { grid-template-columns: 1.2fr 0.8fr !important; }
+          .product-form-grid { grid-template-columns: 1fr 1fr !important; }
+          .dashboard-widgets-grid { grid-template-columns: 1.5fr 1fr !important; }
+        }
+        @media (max-width: 768px) {
+          .main-header { padding: 1rem !important; margin-bottom: 1rem !important; }
+          .nav-btn { font-size: 0.8rem; padding: 0.6rem !important; }
+          .grid { gap: 1rem !important; }
+          .glass.card { padding: 1.2rem !important; }
+          h2 { fontSize: 1.25rem !important; }
+          .table-container { 
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          table {
+            min-width: 600px;
+          }
+        }
+        .low-stock-card:hover .low-stock-dropdown {
+          opacity: 1 !important;
+          visibility: visible !important;
+          pointer-events: auto !important;
+          transform: translateY(5px);
+        }
+        .nav-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.8rem 1.2rem; border-radius: var(--radius-md); background: transparent; color: var(--text-secondary); font-weight: 600; }
+        .nav-btn.active { background: var(--primary-color); color: white; }
+        .nav-btn:hover:not(.active) { background: rgba(255, 255, 255, 0.05); }
+        .primary-btn { background: var(--primary-color); color: white; padding: 0.8rem 1.5rem; border-radius: var(--radius-md); display: flex; align-items: center; gap: 0.5rem; font-weight: 600; }
+        .secondary-btn { background: rgba(255, 255, 255, 0.03); color: var(--primary-color); border: 1px solid rgba(197, 160, 89, 0.2); padding: 0.8rem 1.5rem; border-radius: var(--radius-md); display: flex; align-items: center; gap: 0.5rem; font-weight: 600; }
+        .secondary-btn:hover { background: rgba(197, 160, 89, 0.08); border-color: rgba(197, 160, 89, 0.4); }
+        .table-container { overflow-x: auto; margin-top: 1rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 1rem; color: var(--text-secondary); border-bottom: 2px solid var(--border-color); font-size: 0.85rem; text-transform: uppercase; }
+        td { padding: 1rem; border-bottom: 1px solid var(--border-color); }
+        .stats-card { display: flex; align-items: center; gap: 1.2rem; }
+        .stats-icon { padding: 1rem; border-radius: 1rem; display: flex; align-items: center; justify-content: center; }
+        .stats-card h3 { font-size: 1.8rem; margin: 0; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); }
+        .animate-in { animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .print-only { display: none; }
+        @media print {
+          @page { margin: 0.5cm; }
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+          body { background: white !important; margin: 0; padding: 0; }
+          .container { max-width: 100% !important; padding: 0 !important; width: 100% !important; margin: 0 !important; }
+        }
+      `}</style>
+    </main>
+  );
+}

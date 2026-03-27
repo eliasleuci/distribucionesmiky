@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  role      String   @default("seller")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sales     Sale[]
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Product {
+  id               String     @id @default(cuid())
+  name             String
+  code             String?    @unique
+  categoryId       String
+  unitType         String
+  buyPrice         Float
+  sellPrice        Float
+  stock            Float      @default(0)
+  baseUnit         String
+  conversionFactor Float      @default(1.0)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  category         Category   @relation(fields: [categoryId], references: [id])
+  saleItems        SaleItem[]
+}
+
+model Sale {
+  id              String     @id @default(cuid())
+  type            String
+  total           Float
+  subtotal        Float
+  tax             Float?     @default(0)
+  customerName    String?
+  customerPhone   String?
+  customerAddress String?
+  sellerId        String
+  createdAt       DateTime   @default(now())
+  seller          User       @relation(fields: [sellerId], references: [id])
+  items           SaleItem[]
+}
+
+model SaleItem {
+  id        String  @id @default(cuid())
+  saleId    String
+  productId String
+  quantity  Float
+  price     Float
+  subtotal  Float
+  product   Product @relation(fields: [productId], references: [id])
+  sale      Sale    @relation(fields: [saleId], references: [id])
+}
+
+model SystemSettings {
+  id          String   @id @default("default")
+  enableStock Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+}
