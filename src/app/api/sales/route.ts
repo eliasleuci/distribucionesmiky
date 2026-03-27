@@ -48,6 +48,15 @@ export async function POST(request: Request) {
         const tax = 0; // Optional tax logic here
         const total = subtotal + tax;
 
+        // Validate sellerId — fall back to admin user if the stored ID doesn't exist
+        let resolvedSellerId = sellerId;
+        const sellerExists = sellerId ? await prisma.user.findUnique({ where: { id: sellerId } }) : null;
+        if (!sellerExists) {
+            const adminUser = await prisma.user.findFirst({ where: { role: 'admin' } });
+            if (!adminUser) throw new Error("No admin user found in database. Please run the seed script.");
+            resolvedSellerId = adminUser.id;
+        }
+
         // Use a transaction to ensure all-or-nothing stock deduction
         const result = await prisma.$transaction(async (tx: any) => {
 
@@ -58,7 +67,7 @@ export async function POST(request: Request) {
                     subtotal,
                     total,
                     tax,
-                    sellerId,
+                    sellerId: resolvedSellerId,
                     customerName,
                     customerPhone,
                     customerAddress,
