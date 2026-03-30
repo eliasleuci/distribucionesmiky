@@ -413,7 +413,7 @@ export default function Home() {
       }}></div>
 
       {/* BRANDING HEADER */}
-      <header className="main-header glass no-print" style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.2rem', borderRadius: 'var(--radius-lg)' }}>
+      <header className="main-header glass card no-print" style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <img src="/logo.jpg" alt="Logo" style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(255,255,255,0.1)' }} />
@@ -432,9 +432,9 @@ export default function Home() {
         </div>
       </header>
 
-      <nav className="glass no-print" style={{
+      <nav className="glass card no-print" style={{
         display: 'flex', gap: '0.5rem', padding: '0.5rem',
-        borderRadius: 'var(--radius-lg)', marginBottom: '1.5rem',
+        marginBottom: '1.5rem',
         overflowX: 'auto'
       }}>
         <button onClick={() => setActiveTab("dashboard")} className={`nav-btn ${activeTab === 'dashboard' ? 'active' : ''}`} style={{ 
@@ -582,24 +582,24 @@ export default function Home() {
 
         {activeTab === "billing" && (
           <div className="billing-grid animate-in">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {/* Customer Data Card */}
-              <div className="glass card">
+              <div className="glass card compact-form">
                 <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <UserIcon size={20} /> Datos del Cliente
                 </h3>
-                <div className="grid grid-3" style={{ gap: '1rem' }}>
+                <div className="grid grid-mobile-2 grid-3" style={{ gap: '0.5rem' }}>
                   <div className="input-group">
-                    <label>Nombre / Razón Social</label>
-                    <input type="text" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Nombre / Razón Social</label>
+                    <input type="text" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} placeholder="Ej: Juan Pérez" />
                   </div>
                   <div className="input-group">
-                    <label>Teléfono (WhatsApp)</label>
-                    <input type="text" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Teléfono (WhatsApp)</label>
+                    <input type="text" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} placeholder="Ej: 3522..." />
                   </div>
                   <div className="input-group">
-                    <label>Dirección</label>
-                    <input type="text" value={customer.address} onChange={(e) => setCustomer({ ...customer, address: e.target.value })} />
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Dirección</label>
+                    <input type="text" value={customer.address} onChange={(e) => setCustomer({ ...customer, address: e.target.value })} placeholder="Ej: Av. Siempreviva 742" />
                   </div>
                 </div>
               </div>
@@ -699,7 +699,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div className="glass card" style={{ height: 'fit-content' }}>
                 <h3 style={{ marginBottom: '1.5rem' }}>Resumen de Venta</h3>
                 <div style={{ flex: 1 }}>
